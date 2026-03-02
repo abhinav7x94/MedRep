@@ -1,7 +1,7 @@
 // API Client for Medical Representative Backend
 // Configure this to point to your backend server
 
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+export const API_URL = "/api/v1";
 
 export interface ApiError extends Error {
   status?: number;
