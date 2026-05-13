@@ -14,7 +14,7 @@
     "backend",
     "apis"
   ],
-  "author": "Digvijay",
+  "author": "Mukund",
   "license": "ISC",
   "devDependencies": {
     "nodemon": "^3.1.11",

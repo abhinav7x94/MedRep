@@ -1,10 +1,38 @@
 import { Bot, User as UserIcon, FileText, Copy, Check, Download } from "lucide-react";
-import { useState } from "react";
+import React, { useState } from "react";
 import SourceCard from "./SourceCard";
-import { Button } from "./ui/button";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+/** GFM autolink inside markdown link text can produce <a><a/></a>; React forbids nested anchors. */
+function containsNestedAnchor(nodes: React.ReactNode): boolean {
+  return React.Children.toArray(nodes).some((child) => {
+    if (!React.isValidElement(child)) return false;
+    if (typeof child.type === "string" && child.type === "a") return true;
+    const props = child.props as { children?: React.ReactNode };
+    if (props.children != null) return containsNestedAnchor(props.children);
+    return false;
+  });
+}
+
+const markdownComponents: Components = {
+  a: ({ href, children, ...rest }) => {
+    if (containsNestedAnchor(children)) {
+      return (
+        <span className="font-medium text-primary underline underline-offset-2">
+          {children}
+        </span>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+        {children}
+      </a>
+    );
+  },
+};
 
 export interface ChatSource {
   sourceNumber: number;
@@ -100,6 +128,7 @@ export default function ChatMessage({ message, onSuggestedClick }: ChatMessagePr
             <div className="prose prose-invert prose-emerald max-w-none prose-p:leading-relaxed prose-headings:mb-4 prose-headings:mt-6 first:prose-headings:mt-0 prose-table:border prose-table:border-white/10 prose-th:bg-white/5 prose-th:px-4 prose-th:py-2 prose-td:px-4 prose-td:py-2 prose-td:border-t prose-td:border-white/5">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
               >
                 {message.content}
               </ReactMarkdown>

@@ -78,6 +78,72 @@ ${chunk.pageContent}
 }
 
 /**
+ * Parse suggested follow-ups; LLMs often use *, bullets, numbers, or blank lines vs strict "- " only.
+ * @returns {{ cleanedAnswer: string, suggestedQuestions: string[] }}
+ */
+function splitSuggestedFromAnswer(answer) {
+    if (!answer || typeof answer !== "string") {
+        return { cleanedAnswer: answer || "", suggestedQuestions: [] };
+    }
+
+    const tag = /\[SUGGESTED_QUESTIONS\]/i;
+    const tagMatch = tag.exec(answer);
+    if (!tagMatch) {
+        return { cleanedAnswer: answer.trim(), suggestedQuestions: [] };
+    }
+
+    const start = tagMatch.index;
+    const afterTag = answer.slice(start + tagMatch[0].length);
+    const lines = afterTag.split("\n");
+
+    let foundAny = false;
+    const suggestedQuestions = [];
+    let endOffset = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const raw = lines[i];
+        const trimmed = raw.trim();
+        const lineWithNl = raw.length + (i < lines.length - 1 ? 1 : 0);
+
+        if (!trimmed) {
+            endOffset += lineWithNl;
+            if (foundAny) break;
+            continue;
+        }
+
+        if (!foundAny && trimmed.startsWith("#")) {
+            break;
+        }
+
+        const bullet =
+            trimmed.match(/^[-*•]\s*(.+)$/) ||
+            trimmed.match(/^\d+[.)]\s*(.+)$/);
+        if (bullet) {
+            suggestedQuestions.push(bullet[1].trim());
+            foundAny = true;
+            endOffset += lineWithNl;
+            continue;
+        }
+
+        if (foundAny) {
+            break;
+        }
+
+        endOffset += lineWithNl;
+    }
+
+    if (suggestedQuestions.length === 0) {
+        return { cleanedAnswer: answer.trim(), suggestedQuestions: [] };
+    }
+
+    const blockEnd = start + tagMatch[0].length + endOffset;
+    let cleanedAnswer = (answer.slice(0, start) + answer.slice(blockEnd)).trim();
+    cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, "\n\n");
+
+    return { cleanedAnswer, suggestedQuestions: suggestedQuestions.slice(0, 8) };
+}
+
+/**
  * Medical RAG system prompt with strict rules
  */
 const MEDICAL_SYSTEM_PROMPT = `You are a Digital Medical Representative AI assistant for Indian healthcare professionals.
@@ -98,28 +164,11 @@ CONTENT GUIDELINES (DEPTH & QUALITY):
 3. **Citation Protocol**: Every factual claim must cite its origin. 
    - Format: [Source: <site_name>, URL: <url>]
 
-SUGGESTED FOLLOW-UPS:
-At the very end of your response, after the SOURCE section, provide 3 suggested follow-up questions tailored to the clinical context.
-Format:
+MANDATORY END (last lines of reply, verbatim tag; then exactly 3 list lines using "- "):
 [SUGGESTED_QUESTIONS]
-- Question 1?
-- Question 2?
-- Question 3?
-
-STRUCTURE YOUR RESPONSE AS (EXAMPLE):
-### 📋 CLINICAL OVERVIEW
-[Detailed professional summary]
-
-### 🛠️ REGULATORY & CASE DETAILS
-| Category | Professional Context |
-|----------|----------------------|
-| Approval | ... |
-
-### 🔗 SOURCES & OFFICIAL LINKS
-[Citations]
-
-[SUGGESTED_QUESTIONS]
-- ...
+- Short follow-up question 1?
+- Short follow-up question 2?
+- Short follow-up question 3?
 `;
 
 /**
@@ -218,21 +267,7 @@ export async function chat(query, collectionName = null) {
     });
 
     const answer = response.choices[0].message.content;
-
-    // Extract suggested questions if present
-    let suggestedQuestions = [];
-    const questionsMatch = answer.match(/\[SUGGESTED_QUESTIONS\]\s*((?:- .+\n?)+)/);
-    let cleanedAnswer = answer;
-
-    if (questionsMatch) {
-        suggestedQuestions = questionsMatch[1]
-            .split('\n')
-            .map(q => q.replace(/^- /, '').trim())
-            .filter(q => q.length > 0);
-
-        // Clean up the content to remove the questions block
-        cleanedAnswer = answer.replace(/\[SUGGESTED_QUESTIONS\]\s*(?:- .+\n?)+/, '').trim();
-    }
+    const { cleanedAnswer, suggestedQuestions } = splitSuggestedFromAnswer(answer);
 
     // Extract source information for response
     const sources = (allChunks.length > 0 ? allChunks.slice(0, 10) : []).map((chunk, i) => ({
