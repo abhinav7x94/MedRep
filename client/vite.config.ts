@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://medrep-ai.onrender.com',
+        target: 'https://medrep-ai.onrender.app',
         changeOrigin: true,
       },
     },
